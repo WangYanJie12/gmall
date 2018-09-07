@@ -23,4 +23,18 @@ public interface UserInfoService {
      * @return
      */
     List<UserAddress> getUserAddressList(String userId);
+
+    /**
+     * 登录功能
+     * @param userInfo
+     * @return
+     */
+    UserInfo login(UserInfo userInfo);
+
+    /**
+     * 登录验证
+     * @param userId
+     * @return
+     */
+    UserInfo verify(String userId);
 }

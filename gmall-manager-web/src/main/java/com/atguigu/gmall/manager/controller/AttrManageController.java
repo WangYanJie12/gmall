@@ -3,11 +3,15 @@ package com.atguigu.gmall.manager.controller;
 
 import com.alibaba.dubbo.config.annotation.Reference;
 import com.atguigu.gmall.bean.*;
+import com.atguigu.gmall.service.ListService;
 import com.atguigu.gmall.service.ManageService;
+import org.apache.commons.beanutils.BeanUtils;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 
 /**
@@ -19,6 +23,9 @@ public class AttrManageController {
 
     @Reference
     private ManageService manageService;
+
+    @Reference
+    private ListService listService;
 
     /**
      * 获取一级分类
@@ -85,6 +92,26 @@ public class AttrManageController {
         BaseAttrInfo baseAttrInfo = manageService.getAttrInfo(attrId);
         List<BaseAttrValue> attrValueList = baseAttrInfo.getAttrValueList();
         return attrValueList;
+    }
+
+
+    @RequestMapping(value = "onSale",method = RequestMethod.GET)
+    @ResponseBody
+    public void onSale(String skuId){
+        //根据skuId查询skuInfo
+        SkuInfo skuInfo = manageService.getSkuInfo(skuId);
+        //数据来自于SkuLsInfo
+        SkuLsInfo skuLsInfo = new SkuLsInfo();
+        try {
+            //属性赋值，调用工具类
+            BeanUtils.copyProperties(skuLsInfo,skuInfo);
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
+        //调用服务层
+        listService.saveSkuInfo(skuLsInfo);
     }
 
 }

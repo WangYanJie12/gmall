@@ -109,4 +109,18 @@ public interface ManageService {
      * @return
      */
     List<SpuSaleAttr> selectSpuSaleAttrListCheckBySku(SkuInfo skuInfo);
+
+    /**
+     * 根据spuId查询所有sku销售属性值的列表
+     * @param spuId
+     * @return
+     */
+    List<SkuSaleAttrValue> getSkuSaleAttrValueListBySpu(String spuId);
+
+    /**
+     * 根据平台属性值的id，查询到平台属性名，平台属性值
+     * @param attrValueIdList
+     * @return
+     */
+    List<BaseAttrInfo> getAttrList(List<String> attrValueIdList);
 }

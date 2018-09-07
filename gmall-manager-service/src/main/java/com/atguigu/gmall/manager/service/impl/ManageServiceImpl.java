@@ -1,11 +1,17 @@
 package com.atguigu.gmall.manager.service.impl;
 
 import com.alibaba.dubbo.config.annotation.Service;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.bean.*;
+import com.atguigu.gmall.config.RedisUtil;
+import com.atguigu.gmall.manager.constant.ManageConstant;
 import com.atguigu.gmall.manager.mapper.*;
 import com.atguigu.gmall.service.ManageService;
 import javafx.scene.image.Image;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import redis.clients.jedis.Jedis;
 
 import javax.swing.text.html.HTMLDocument;
 import java.util.List;
@@ -58,6 +64,9 @@ public class ManageServiceImpl implements ManageService {
 
     @Autowired
     private SkuAttrValueMapper skuAttrValueMapper;
+
+    @Autowired
+    private RedisUtil redisUtil;
 
     @Override
     public List<BaseCatalog1> getCatalog1() {
@@ -323,11 +332,74 @@ public class ManageServiceImpl implements ManageService {
 
     @Override
     public SkuInfo getSkuInfo(String skuId) {
+
+        SkuInfo skuInfo = null;
+        try{
+            Jedis jedis = redisUtil.getJedis();
+            //定义key
+            String skuInfoKey = ManageConstant.SKUKEY_PREFIX+skuId+ManageConstant.SKUKEY_SUFFIX;
+            String skuJson = jedis.get(skuInfoKey);
+            if(skuJson == null || skuJson.length() == 0){
+                //如果缓存中没有命中，就需要在数据库中获取
+                System.out.println("缓存中没有数据");
+                //没有数据，需要加锁，取出数据后，再存入到缓存中，下次获取的时候直接从缓存中获取即可
+                //自定义key
+                String skuLockKey = ManageConstant.SKUKEY_PREFIX+skuId+ManageConstant.SKULOCK_SUFFIX;
+                //加上锁
+                String lockKey = jedis.set(skuLockKey,"OK","NX","PX",ManageConstant.SKULOCK_EXPIRE_PX);
+                if ("OK".equals(lockKey)){
+                    //获得锁
+                    System.out.println("获得锁");
+                    //从数据库中取得数据
+                    skuInfo = getSkuInfoDB(skuId);
+                    //将对象转换成字符串
+                    String skuInfoJson = JSON.toJSONString(skuInfo);
+                    //将字符串存到缓存中
+                    jedis.setex(skuInfoKey,ManageConstant.SKUKEY_TIMEOUT,skuInfoJson);
+                    //关闭jedis并返回
+                    jedis.close();
+                    return skuInfo;
+                }else{
+                    System.out.println("等待");
+                    //等待
+                    Thread.sleep(1000);
+                    //自旋(递归调用)
+                    return getSkuInfo(skuId);
+                }
+            }else{
+                //缓存中命中数据
+                skuInfo = JSON.parseObject(skuJson, SkuInfo.class);
+                //关闭jedis并返回
+                jedis.close();
+                return skuInfo;
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        //从数据库返回数据
+        return getSkuInfoDB(skuId);
+    }
+
+    private SkuInfo getSkuInfoDB(String skuId) {
         SkuInfo skuInfo = skuInfoMapper.selectByPrimaryKey(skuId);
         SkuImage skuImage = new SkuImage();
         skuImage.setSkuId(skuId);
         List<SkuImage> skuImageList = skuImageMapper.select(skuImage);
         skuInfo.setSkuImageList(skuImageList);
+
+        //将查询出来的商品属性值赋给对象
+        //保存商品属性值的集合
+        SkuAttrValue skuAttrValue = new SkuAttrValue();
+        skuAttrValue.setSkuId(skuId);
+        List<SkuAttrValue> skuAttrValueList = skuAttrValueMapper.select(skuAttrValue);
+        skuInfo.setSkuAttrValueList(skuAttrValueList);
+
+        //保存平台销售属性值的集合
+        SkuSaleAttrValue skuSaleAttrValue = new SkuSaleAttrValue();
+        skuSaleAttrValue.setSkuId(skuId);
+        List<SkuSaleAttrValue> skuSaleAttrValueList = skuSaleAttrValueMapper.select(skuSaleAttrValue);
+        skuInfo.setSkuSaleAttrValueList(skuSaleAttrValueList);
+
         return skuInfo;
     }
 
@@ -335,4 +407,19 @@ public class ManageServiceImpl implements ManageService {
     public List<SpuSaleAttr> selectSpuSaleAttrListCheckBySku(SkuInfo skuInfo) {
         return spuSaleAttrMapper.selectSpuSaleAttrListCheckBySku(Long.parseLong(skuInfo.getId()),Long.parseLong(skuInfo.getSpuId()));
     }
+
+    @Override
+    public List<SkuSaleAttrValue> getSkuSaleAttrValueListBySpu(String spuId) {
+        return skuSaleAttrValueMapper.selectSkuSaleAttrValueListBySpu(spuId);
+    }
+
+    @Override
+    public List<BaseAttrInfo> getAttrList(List<String> attrValueIdList) {
+        //将集合中的所有的id遍历查找数据，在mybatis中遍历集合要使用工具类StringUtils.join(需要一个数组)效率较高
+        //foreach循坏效率较低
+        //集合转数组的方法：toArray()
+        String attrValueIds = StringUtils.join(attrValueIdList.toArray(),",");
+        return baseAttrInfoMapper.selectAttrInfoListByIds(attrValueIds);
+    }
+
 }
